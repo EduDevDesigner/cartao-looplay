@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <title></title>   
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="style.css">
+
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+
+  const scene = document.querySelector("a-scene");
+
+  let ambientAudio = null;
+  let avatar = null;
+  const originalScale = "0.15505 0.15505 0.15505";
+
+  scene.addEventListener("renderstart", () => {
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const camera = scene.camera;
+
+    const target = document.querySelector("[mindar-image-target]");
+    avatar = document.querySelector("#avatar");
+    const buttons = document.querySelectorAll(".clickable");
+
+    // VIDEO
+    const videoPlane = document.querySelector("#videoPlane");
+    const videoElement = document.querySelector("#videoQuadrado");
+
+    // 🔹 CONTROLE PARA EVITAR DUPLO PLAY
+    let videoPlaying = false;
+
+    // 🔹 QUANDO O VIDEO TERMINAR
+    videoElement.addEventListener("ended", () => {
+
+      // FADE OUT
+      videoPlane.removeAttribute("animation__fadein");
+
+      videoPlane.setAttribute("animation__fadeout", {
+        property: "material.opacity",
+        from: 1,
+        to: 0,
+        dur: 700,
+        easing: "linear"
+      });
+
+      setTimeout(() => {
+        videoPlane.setAttribute("visible", false);
+        videoElement.currentTime = 0;
+        videoPlaying = false;
+      }, 700);
+    });
+
+    // 🔹 SALVA POSIÇÃO FINAL ORIGINAL (UMA VEZ)
+    buttons.forEach(btn => {
+      const pos = btn.getAttribute("position");
+      btn.dataset.finalX = pos.x;
+      btn.dataset.finalY = pos.y;
+      btn.dataset.finalZ = pos.z;
+
+      // começa sempre atrás
+      btn.object3D.position.z = -0.25;
+    });
+
+    // ============================
+    // TARGET FOUND
+    // ============================
+    target.addEventListener("targetFound", () => {
+
+      /* ---------- BOTÕES ---------- */
+      buttons.forEach((btn, index) => {
+
+        btn.removeAttribute("animation__enter");
+
+        // garante que começa atrás
+        btn.object3D.position.z = -0.25;
+
+        btn.setAttribute("animation__enter", {
+          property: "position",
+          from: `${btn.dataset.finalX} ${btn.dataset.finalY} -0.25`,
+          to: `${btn.dataset.finalX} ${btn.dataset.finalY} ${btn.dataset.finalZ}`,
+          dur: 900,
+          delay: index * 120,
+          easing: "easeOutBack"
+        });
+      });
+
+      /* ---------- AVATAR (SQUASH & STRETCH) ---------- */
+      avatar.removeAttribute("animation__squash");
+      avatar.removeAttribute("animation__stretch");
+
+      avatar.setAttribute("scale", "0.15505 0.01 0.15505");
+
+      avatar.setAttribute("animation__squash", {
+        property: "scale",
+        to: "0.18 0.05 0.18",
+        dur: 250,
+        easing: "easeOutQuad"
+      });
+
+      avatar.setAttribute("animation__stretch", {
+        property: "scale",
+        from: "0.18 0.05 0.18",
+        to: originalScale,
+        dur: 450,
+        delay: 250,
+        easing: "easeOutElastic"
+      });
+
+      /* ---------- ÁUDIO ---------- */
+      ambientAudio = document.getElementById("audioAmbiente");
+      ambientAudio.volume = 0.10;
+      ambientAudio.loop = true;
+      ambientAudio.play();
+    });
+
+    // ============================
+    // TARGET LOST
+    // ============================
+    target.addEventListener("targetLost", () => {
+
+      avatar.setAttribute("scale", originalScale);
+
+      buttons.forEach(btn => {
+        btn.object3D.position.z = -0.25;
+        btn.removeAttribute("animation__enter");
+      });
+
+      // ESCONDE O VIDEO
+      videoPlane.setAttribute("visible", false);
+      videoPlane.setAttribute("material", "opacity: 0");
+
+      videoElement.pause();
+      videoElement.currentTime = 0;
+      videoPlaying = false;
+
+      if (ambientAudio) {
+        ambientAudio.pause();
+        ambientAudio.currentTime = 0;
+      }
+    });
+
+    // ============================
+    // CLIQUES / TOQUES
+    // ============================
+    function checkHit(x, y) {
+
+      // EVITA DUPLO DISPARO touch + mouse
+      if (videoPlaying) return;
+
+      mouse.x = (x / window.innerWidth) * 2 - 1;
+      mouse.y = -(y / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const clickable = Array.from(document.querySelectorAll(".clickable"))
+        .map(el => el.object3D);
+
+      const intersects = raycaster.intersectObjects(clickable, true);
+
+      if (intersects.length > 0) {
+        const obj = intersects[0].object.el;
+        if (!obj) return;
+
+        if (obj.hasAttribute("open-insta")) window.location.href = "https://instagram.com";
+        if (obj.hasAttribute("open-face")) window.location.href = "https://facebook.com";
+        if (obj.hasAttribute("open-whats")) window.location.href = "https://wa.me/000000000";
+
+        if (obj.hasAttribute("open-audio")) {
+
+          videoPlaying = true;
+
+          const audio = document.getElementById("audioVoz");
+          audio.currentTime = 0;
+          audio.play();
+
+          // MOSTRA VIDEO
+          videoPlane.setAttribute("visible", true);
+
+          // OPACIDADE INICIAL
+          videoPlane.setAttribute("material", "opacity: 0");
+
+          // FADE IN
+          videoPlane.removeAttribute("animation__fadeout");
+
+          videoPlane.setAttribute("animation__fadein", {
+            property: "material.opacity",
+            from: 0,
+            to: 1,
+            dur: 700,
+            easing: "linear"
+          });
+
+          // REINICIA E TOCA VIDEO
+          videoElement.pause();
+          videoElement.currentTime = 0;
+
+          const playPromise = videoElement.play();
+
+          if (playPromise !== undefined) {
+            playPromise.catch(() => {
+              videoPlaying = false;
+            });
+          }
+        }
+      }
+    }
+
+    // TOUCH (tocar)
+    window.addEventListener("touchstart", e => {
+      e.preventDefault();
+      const t = e.touches[0];
+      checkHit(t.clientX, t.clientY);
+    }, { passive: false });
+
+    // MOUSE
+    window.addEventListener("mousedown", e => {
+      checkHit(e.clientX, e.clientY);
+    });
+
+  });
+});
+</script>
+  </head>
+
+  <body>
+    <a-scene
+      mindar-image="imageTargetSrc: Imagens/targets.mind;"
+      color-space="sRGB"
+      renderer="colorManagement: true, physicallyCorrectLights"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false">
+
+      <a-assets>
+        <img id="card" src="Imagens/Cartao.jpg">
+        <img id="instaIcon" src="Imagens/btn_Instagram2.png">
+      <!--  <img id="faceIcon" src="Imagens/btn_Facebook.png"> -->
+        <img id="whatsIcon" src="Imagens/btn_Whatsapp2.png">
+        <img id="audioIcon" src="Imagens/btn_Audio2.png">
+
+        <audio id="audioVoz" src="Audios/"></audio>
+        <audio id="audioAmbiente" src="Audios/vibedepot-free-rock-446606.mp3"></audio>
+
+        <!-- VIDEO 1:1 -->
+        <video id="videoQuadrado" src="Videos/Marta_Arquitetura.mp4" preload="auto" playsinline webkit-playsinline crossorigin="anonymous"></video>
+
+        <a-asset-item id="avatarModel" src="Modelos/logo.glb"></a-asset-item>
+      </a-assets>
+
+      <a-camera position="0 0 0" look-controls="enabled: false">
+        <a-cursor rayOrigin="mouse"></a-cursor>
+      </a-camera>
+
+      <a-entity mindar-image-target="targetIndex: 0">
+
+        <a-plane src="#card" position="0 0 0" height="0.552" width="1"></a-plane>
+
+        <a-gltf-model id="avatar" src="#avatarModel" rotation="90 0 0" position="0.15 0.0 0.3" scale="0.15505 0.15505 0.15505" animation="
+      property: rotation;
+      from: 0 0 0;
+      to: 0 0 360;
+      dur: 10000;
+      easing: linear;
+      loop: true;"></a-gltf-model>
+
+        <!-- VIDEO 1:1 -->
+        <a-video id="videoPlane" src="#videoQuadrado" position="-0.33 0.13 0.01" width="0.25" height="0.25" visible="false" material="opacity: 0"></a-video>
+
+        <a-image src="#instaIcon" position="-0.37193 -0.43656 0.03978" width="0.22" height="0.22" open-insta class="clickable"></a-image>
+
+        <a-image src="#audioIcon" position="-0.02081 -0.45525 0.04643" width="0.22" height="0.22" open-audio class="clickable"></a-image>
+
+        <a-image src="#whatsIcon" position="0.35 -0.45 0.05" width="0.22" height="0.22" open-whats class="clickable"></a-image>
+
+    <!--    <a-image src="#audioIcon" position="0.67131 -0.027 0.02927"
+                 width="0.22" height="0.22"
+                 open-audio class="clickable"></a-image>
+     -->
+      </a-entity>
+
+    </a-scene>
+  </body>
+</html>
